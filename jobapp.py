@@ -90,12 +90,14 @@ def main():
     # Crear perfil estructurado
     profile_text = (
         f"Carrera: {carrera}\n"
-        f"Experiencia Laboral: {experiencia}\n"
-        f"Áreas de Interés: {', '.join(areas) if areas else 'Ninguno especificado'}\n"
-        f"Habilidades: {', '.join(habilidades) if habilidades else 'Ninguna especificada'}"
+        f"Experiencia relevante: {experiencia}\n"
+        f"Habilidades técnicas: {', '.join(habilidades)}\n"
+        f"Áreas de interés profesional: {', '.join(areas)}"
     )
-    
-    # Resto del código se mantiene igual...
+
+     # Obtener embedding del perfil
+    profile_embedding = get_embedding(profile_text)
+
     print("\nBuscando trabajos remotos en RemoteOK...")
     jobs_db = fetch_remoteok_jobs()
     
@@ -105,32 +107,48 @@ def main():
     
     print(f"\nAnalizando {len(jobs_db)} trabajos remotos...")
     
-    # Obtener embedding del perfil
-    profile_embedding = get_embedding(profile_text)
-    
+    # Nuevo sistema de procesamiento de trabajos
     matches = []
     for job in jobs_db:
-        job_text = f"{job['title']} {job['description']} {', '.join(job['skills'])}"
+        # Mejorar el texto del puesto
+        job_text = (
+            f"Puesto: {job['title']}\n"
+            f"Requisitos clave: {job['description']}\n"
+            f"Habilidades requeridas: {', '.join(job['skills'])}\n"
+            f"Sector: {' '.join(job['skills'])}"
+        )
+        
+        # Limitar la longitud del texto para enfoque
+        job_text = ' '.join(job_text.split()[:300])  # Máximo 300 palabras
+        
         job_embedding = get_embedding(job_text)
         similarity = cosine_similarity(profile_embedding, job_embedding)
+        
+        # Calcular coincidencia de habilidades
+        skill_match = len(set(habilidades) & set(job['skills']))
+        skill_boost = min(skill_match * 0.05, 0.15)  # Hasta 15% de bonus
+        
         matches.append({
             "job": job,
-            "similarity": round(similarity, 2)
+            "similarity": round(similarity + skill_boost, 2),
+            "skill_matches": skill_match
         })
-    
+
     # Ordenar y seleccionar los 3 mejores
     sorted_matches = sorted(matches, key=lambda x: x["similarity"], reverse=True)[:3]
     
     # Generar explicaciones
     for match in sorted_matches:
         prompt = (
-            f"Explica por qué este perfil es adecuado para el puesto remoto de {match['job']['title']}:\n\n"
-            f"Perfil:\n{profile_text}\n\n"
-            f"Detalles del puesto remoto:\n"
-            f"- Empresa: {match['job']['company']}\n"
-            f"- Habilidades requeridas: {', '.join(match['job']['skills'])}\n"
-            f"- Enlace: {match['job']['url']}\n"
-            f"- Descripción: {match['job']['description'][:500]}..."
+            f"Como orientador profesional, explica cómo el perfil del candidato "
+            f"se alinea con el puesto de {match['job']['title']} considerando:\n"
+            f"- Coincidencia de habilidades técnicas ({match['skill_matches']} en común)\n"
+            f"- Experiencia relevante\n"
+            f"- Formación académica\n"
+            f"Perfil del candidato:\n{profile_text}\n\n"
+            f"Detalles del puesto:\n{job_text}\n\n"
+            f"La respuesta debe ser concisa (máx 200 palabras) y destacar:\n"
+            f"1. Puntos fuertes del candidato\n2. Posibles gaps\n3. Recomendaciones"
         )
         response = openai.chat.completions.create(
             model="gpt-4o-mini",
